@@ -336,6 +336,23 @@ def run(
     maps = np.zeros(nc) + map
     for i, c in enumerate(ap_class):
         maps[c] = ap[i]
+
+    result_dict = dict()
+    result_dict["param_info"] = dict()
+    result_dict["param_info"]["conf_thres"] = conf_thres
+    result_dict["param_info"]["iou_thres"] = iou_thres
+
+    result_dict["data_info"] = dict()
+    result_dict["data_info"]["dataset_path"] = data[task]
+    result_dict["data_info"]["imgs_num"] = dataloader.dataset.n
+
+    result_dict["prediction_info"] = list()
+    result_dict["prediction_info"].append(dict({"Class": "all", "instances": int(nt.sum()), "P": float(mp), "R": float(mr), "mAP50": float(map50), "mAP50-95": float(map)}))
+    for i, c in enumerate(ap_class):
+        result_dict["prediction_info"].append(dict({"Class": names[c], "instances": int(nt[c]), "P": float(p[i]), "R": float(r[i]), "mAP50": float(ap50[i]), "mAP50-95": float(ap[i])}))
+    with open((save_dir / 'val_result.json'), 'w') as fp:
+        json.dump(result_dict, fp)
+
     return (mp, mr, map50, map, *(loss.cpu() / len(dataloader)).tolist()), maps, t
 
 
