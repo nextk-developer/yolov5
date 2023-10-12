@@ -13,6 +13,9 @@ import torch
 
 from utils import TryExcept, threaded
 
+import os
+import time
+import mlflow
 
 def fitness(x):
     # Model fitness as a weighted combination of metrics
@@ -87,6 +90,16 @@ def ap_per_class(tp, conf, pred_cls, target_cls, plot=False, save_dir='.', names
         plot_mc_curve(px, f1, Path(save_dir) / f'{prefix}F1_curve.png', names, ylabel='F1')
         plot_mc_curve(px, p, Path(save_dir) / f'{prefix}P_curve.png', names, ylabel='Precision')
         plot_mc_curve(px, r, Path(save_dir) / f'{prefix}R_curve.png', names, ylabel='Recall')
+
+        while(True):
+            if not os.path.exists(Path(save_dir) / f'{prefix}PR_curve.png') or not os.path.exists(Path(save_dir) / f'{prefix}F1_curve.png') or not os.path.exists(Path(save_dir) / f'{prefix}P_curve.png') or not os.path.exists(Path(save_dir) / f'{prefix}R_curve.png'):                
+                time.sleep(1)
+            else:
+                mlflow.log_artifact(local_path = Path(save_dir) / f'{prefix}PR_curve.png', artifact_path = f'plot_metrics')
+                mlflow.log_artifact(local_path = Path(save_dir) / f'{prefix}F1_curve.png', artifact_path = f'plot_metrics')
+                mlflow.log_artifact(local_path = Path(save_dir) / f'{prefix}P_curve.png', artifact_path = f'plot_metrics')
+                mlflow.log_artifact(local_path = Path(save_dir) / f'{prefix}R_curve.png', artifact_path = f'plot_metrics')
+                break
 
     i = smooth(f1.mean(0), 0.1).argmax()  # max F1 index
     p, r, f1 = p[:, i], r[:, i], f1[:, i]
@@ -213,6 +226,13 @@ class ConfusionMatrix:
         ax.set_title('Confusion Matrix')
         fig.savefig(Path(save_dir) / 'confusion_matrix.png', dpi=250)
         plt.close(fig)
+
+        while(True):
+            if not os.path.exists(Path(save_dir) / 'confusion_matrix.png'):
+                time.sleep(1)
+            else:
+                mlflow.log_artifact(local_path = Path(save_dir) / 'confusion_matrix.png', artifact_path = f'plot_metrics')
+                break        
 
     def print(self):
         for i in range(self.nc + 1):

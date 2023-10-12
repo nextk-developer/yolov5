@@ -46,6 +46,9 @@ from utils.metrics import ConfusionMatrix, ap_per_class, box_iou
 from utils.plots import output_to_target, plot_images, plot_val_study
 from utils.torch_utils import select_device, smart_inference_mode
 
+import time
+import mlflow
+from utils.mlflow_config import *
 
 def save_one_txt(predn, save_conf, shape, file):
     # Save one txt result
@@ -267,6 +270,13 @@ def run(
         if plots and batch_i < 3:
             plot_images(im, targets, paths, save_dir / f'val_batch{batch_i}_labels.jpg', names)  # labels
             plot_images(im, output_to_target(preds), paths, save_dir / f'val_batch{batch_i}_pred.jpg', names)  # pred
+            while(True):
+                if not os.path.exists(Path(save_dir / f'val_batch{batch_i}_labels.jpg')) or not os.path.exists(Path(save_dir / f'val_batch{batch_i}_pred.jpg')):
+                    time.sleep(1)
+                else:
+                    mlflow.log_artifact(local_path = save_dir / f'val_batch{batch_i}_labels.jpg', artifact_path = f'plot_images')
+                    mlflow.log_artifact(local_path = save_dir / f'val_batch{batch_i}_pred.jpg', artifact_path = f'plot_images')
+                    break
 
         callbacks.run('on_val_batch_end', batch_i, im, targets, paths, shapes, preds)
 
@@ -351,7 +361,7 @@ def run(
     for i, c in enumerate(ap_class):
         result_dict["prediction_info"].append(dict({"Class": names[c], "instances": int(nt[c]), "P": float(p[i]), "R": float(r[i]), "mAP50": float(ap50[i]), "mAP50-95": float(ap[i])}))
     with open((save_dir / 'val_result.json'), 'w') as fp:
-        json.dump(result_dict, fp)
+        json.dump(result_dict, fp, indent=4)
 
     return (mp, mr, map50, map, *(loss.cpu() / len(dataloader)).tolist()), maps, t
 
@@ -396,7 +406,11 @@ def main(opt):
             LOGGER.info(f'WARNING ⚠️ confidence threshold {opt.conf_thres} > 0.001 produces invalid results')
         if opt.save_hybrid:
             LOGGER.info('WARNING ⚠️ --save-hybrid will return high mAP from hybrid labels, not from predictions alone')
-        run(**vars(opt))
+        
+        mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+        mlflow.set_experiment(experiment_name=opt.project)
+        with mlflow.start_run(run_name=opt.name):
+            run(**vars(opt))
 
     else:
         weights = opt.weights if isinstance(opt.weights, list) else [opt.weights]
