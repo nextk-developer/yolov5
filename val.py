@@ -48,7 +48,7 @@ from utils.torch_utils import select_device, smart_inference_mode
 
 import time
 import mlflow
-from utils.mlflow_config import *
+from utils.custom_utils import MLFLOW_TRACKING_URI
 
 def save_one_txt(predn, save_conf, shape, file):
     # Save one txt result

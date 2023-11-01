@@ -68,16 +68,41 @@ from utils.torch_utils import (EarlyStopping, ModelEMA, de_parallel, select_devi
 
 import mlflow
 import shutil
-from utils.mlflow_config import *
+from utils.custom_utils import MLFLOW_TRACKING_URI, RunInfo, Database, AppSql
 from utils.model_exporter import ModelExporter
 
 LOCAL_RANK = int(os.getenv('LOCAL_RANK', -1))  # https://pytorch.org/docs/stable/elastic/run.html
 RANK = int(os.getenv('RANK', -1))
 WORLD_SIZE = int(os.getenv('WORLD_SIZE', 1))
-GIT_INFO = check_git_info()
+# GIT_INFO = check_git_info()
+GIT_INFO = ""
 
 
-def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictionary
+def __update_training_status_db(db_host, db_port, current_epoch, training_log_db_id):
+    #insert log
+    db = Database(host=db_host, port=db_port)
+    db.connect()
+    
+    # create tuple in training_progess_stataus table
+    dt = datetime.now()
+    var = (current_epoch, dt, training_log_db_id)
+    training_log_db_id = db.update(AppSql.training_status_update,var)
+    db.close()
+    
+    return
+
+def __update_training_end_status_db(db_host, db_port, training_log_db_id):
+    #insert log
+    db = Database(host=db_host, port=db_port)
+    db.connect()
+    
+    # create tuple in training_progess_stataus table
+    dt = datetime.now()
+    var = (dt, dt, training_log_db_id)
+    training_log_db_id = db.update(AppSql.training_status_update_end,var)
+    db.close()
+
+def train(hyp, opt, device, callbacks, run):  # hyp is path/to/hyp.yaml or hyp dictionary
     save_dir, epochs, batch_size, weights, single_cls, evolve, data, cfg, resume, noval, nosave, workers, freeze = \
         Path(opt.save_dir), opt.epochs, opt.batch_size, opt.weights, opt.single_cls, opt.evolve, opt.data, opt.cfg, \
         opt.resume, opt.noval, opt.nosave, opt.workers, opt.freeze
@@ -103,6 +128,16 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
         shutil.move(Path(save_dir / 'opt.yaml'), Path(save_dir / f'{opt.name}-opt.yaml'))
         mlflow.log_artifact(local_path= Path(save_dir / f'{opt.name}-hyp.yaml'), artifact_path='cfg_data')
         mlflow.log_artifact(local_path= Path(save_dir / f'{opt.name}-opt.yaml'), artifact_path='cfg_data')
+
+        run_info = RunInfo(
+            exp_name=opt.project,
+            run_name=opt.name,
+            run_id=run.info.run_id,
+            yolo_model_type=opt.yolo_model_type,
+            run_date = datetime.fromtimestamp(int(run.info.start_time)/1000).strftime('%Y-%m-%d %X')
+        )
+        run_info.save_yaml(save_dir=Path(save_dir / "weights/model_info.yaml"))
+        mlflow.log_artifact(local_path= Path(save_dir / f'weights/model_info.yaml'), artifact_path='weights')
 
     # Loggers
     data_dict = None
@@ -431,6 +466,7 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
             mlflow.log_metric('x/lr0', log_vals[10].item(), step=epoch)
             mlflow.log_metric('x/lr1', log_vals[11].item(), step=epoch)
             mlflow.log_metric('x/lr2', log_vals[12].item(), step=epoch)
+            __update_training_status_db(opt.db_host, opt.db_port, epoch+1, opt.training_log_db_id)
 
             # Save model
             if (not nosave) or (final_epoch and not evolve):  # if save
@@ -505,7 +541,8 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
         mlflow.log_artifact(local_path=Path(model_save_path), artifact_path='weights')
         mlflow.log_artifact(local_path=Path(model_exporter.wts_path), artifact_path='weights')
         mlflow.log_artifact(local_path=Path(model_exporter.wts_enc_path), artifact_path='weights')
-        
+        __update_training_end_status_db(opt.db_host, opt.db_port, opt.training_log_db_id)
+
     torch.cuda.empty_cache()
     return results
 
@@ -553,6 +590,13 @@ def parse_opt(known=False):
     parser.add_argument('--bbox_interval', type=int, default=-1, help='Set bounding-box image logging interval')
     parser.add_argument('--artifact_alias', type=str, default='latest', help='Version of dataset artifact to use')
 
+    # Custom arguments
+    parser.add_argument('--yolo_model_type', type=str, default='yolov5n', help='Version of dataset artifact to use')
+    parser.add_argument('--mlflow_tracking_uri', type=str, default=MLFLOW_TRACKING_URI, help='Version of dataset artifact to use')
+    parser.add_argument('--remove_resource_after_train', type=bool, default=True, help='remove train aftifacts after train')
+    parser.add_argument('--training_log_db_id', type=str, required=True, help='training_log_db_id')
+    parser.add_argument('--db_host', type=str, help='db_host')
+    parser.add_argument('--db_port', type=str, help='db_port')
     return parser.parse_known_args()[0] if known else parser.parse_args()
 
 
@@ -604,11 +648,16 @@ def main(opt, callbacks=Callbacks()):
 
     # Train
     if not opt.evolve:
-        mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+        mlflow.set_tracking_uri(opt.mlflow_tracking_uri)
         mlflow.set_experiment(experiment_name=opt.project)
-        with mlflow.start_run(run_name=opt.name):
-            train(opt.hyp, opt, device, callbacks)
+        with mlflow.start_run(run_name=opt.name) as run:
+            train(opt.hyp, opt, device, callbacks, run)
 
+        if opt.remove_resource_after_train:
+            print('Clean the training artifacts in local yolo directory')
+            shutil.rmtree(opt.save_dir, ignore_errors=True)
+        else:
+            print('keep the training artifacts in local')
     # Evolve hyperparameters (optional)
     else:
         # Hyperparameter evolution metadata (mutation scale 0-1, lower_limit, upper_limit)
