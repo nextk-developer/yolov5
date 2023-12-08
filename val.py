@@ -128,6 +128,9 @@ def run(
         plots=True,
         callbacks=Callbacks(),
         compute_loss=None,
+        mlflow_tracking_uri = MLFLOW_TRACKING_URI,
+        mlflow_run_id = None
+        
 ):
     # Initialize/load model and set device
     training = model is not None
