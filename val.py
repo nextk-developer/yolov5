@@ -390,6 +390,13 @@ def parse_opt():
     parser.add_argument('--exist-ok', action='store_true', help='existing project/name ok, do not increment')
     parser.add_argument('--half', action='store_true', help='use FP16 half-precision inference')
     parser.add_argument('--dnn', action='store_true', help='use OpenCV DNN for ONNX inference')
+    
+    # Custom arguments
+    parser.add_argument('--mlflow_tracking_uri', type=str, default=MLFLOW_TRACKING_URI, help='mlflow tracking uri')
+    parser.add_argument('--mlflow_run_id', type=str, default=None, help='mlflow run id want to log evaluation metrics')
+    
+    
+    
     opt = parser.parse_args()
     opt.data = check_yaml(opt.data)  # check YAML
     opt.save_json |= opt.data.endswith('coco.yaml')
@@ -407,10 +414,19 @@ def main(opt):
         if opt.save_hybrid:
             LOGGER.info('WARNING ⚠️ --save-hybrid will return high mAP from hybrid labels, not from predictions alone')
         
+        #setting mlflow to log evaluation metrics
         mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
-        mlflow.set_experiment(experiment_name=opt.project)
-        with mlflow.start_run(run_name=opt.name):
-            run(**vars(opt))
+        print("log with mlflow :")
+        print(MLFLOW_TRACKING_URI)
+        print(opt.mlflow_run_id)
+        if opt.mlflow_run_id is not None:
+            with mlflow.start_run(run_id=opt.mlflow_run_id):
+                run(**vars(opt))
+        else:
+            #create new run to log metrics
+            mlflow.set_experiment(experiment_name=opt.project)
+            with mlflow.start_run(run_name=opt.name):
+                run(**vars(opt))
 
     else:
         weights = opt.weights if isinstance(opt.weights, list) else [opt.weights]
