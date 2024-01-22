@@ -26,9 +26,9 @@ import psycopg2
 load_dotenv()
 
 class Database:
-    def __init__(self, host=os.getenv("database_url"), port=os.getenv("database_port"),\
-        database=os.getenv("database_name"),\
-        user=os.getenv("database_user"), password=os.getenv("database_password")) -> None:  
+    def __init__(self, host=os.getenv("DB_HOST"), port=os.getenv("DB_PORT"),\
+        database=os.getenv("DB_NAME"),\
+        user=os.getenv("DB_ID"), password=os.getenv("DB_PW")) -> None:  
         print(f'init database:{host} {port} {database} {user} {password}')     
         self.host = host
         self.port = port
