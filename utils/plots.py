@@ -24,6 +24,9 @@ from utils import TryExcept, threaded
 from utils.general import LOGGER, clip_boxes, increment_path, xywh2xyxy, xyxy2xywh
 from utils.metrics import fitness
 
+import mlflow
+import time
+
 # Settings
 RANK = int(os.getenv('RANK', -1))
 matplotlib.rc('font', **{'size': 11})
@@ -396,6 +399,13 @@ def plot_results(file='path/to/results.csv', dir=''):
     fig.savefig(save_dir / 'results.png', dpi=200)
     plt.close()
 
+    while(True):
+        if not os.path.exists(Path(save_dir / 'results.png')) or not os.path.exists(Path(save_dir / 'results.csv')):
+            time.sleep(1)
+        else:
+            mlflow.log_artifact(local_path = Path(save_dir / 'results.png'), artifact_path = f'plot_metrics')
+            mlflow.log_artifact(local_path = Path(save_dir / 'results.csv'), artifact_path = f'plot_metrics')
+            break    
 
 def profile_idetection(start=0, stop=0, labels=(), save_dir=''):
     # Plot iDetection '*.txt' per-image logs. from utils.plots import *; profile_idetection()

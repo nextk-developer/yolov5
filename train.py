@@ -66,13 +66,50 @@ from utils.plots import plot_evolve
 from utils.torch_utils import (EarlyStopping, ModelEMA, de_parallel, select_device, smart_DDP, smart_optimizer,
                                smart_resume, torch_distributed_zero_first)
 
+import mlflow
+from mlflow.models.signature import infer_signature
+import shutil
+from utils.custom_utils import MLFLOW_TRACKING_URI, RunInfo, Database, AppSql
+from utils.model_exporter import ModelExporter
+
 LOCAL_RANK = int(os.getenv('LOCAL_RANK', -1))  # https://pytorch.org/docs/stable/elastic/run.html
 RANK = int(os.getenv('RANK', -1))
 WORLD_SIZE = int(os.getenv('WORLD_SIZE', 1))
-GIT_INFO = check_git_info()
+# GIT_INFO = check_git_info()
+GIT_INFO = ""
 
 
-def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictionary
+def __update_training_status_db(db_host, db_port, current_epoch, training_log_db_id):
+    #insert log
+    db = Database(host=db_host, port=db_port)
+    db.connect()
+    
+    # create tuple in training_progess_stataus table
+    dt = datetime.now()
+    var = (current_epoch, dt, training_log_db_id)
+    training_log_db_id = db.update(AppSql.training_status_update,var)
+    db.close()
+    
+    return
+
+def __update_training_end_status_db(db_host, db_port, training_log_db_id):
+    #insert log
+    db = Database(host=db_host, port=db_port)
+    db.connect()
+    
+    # create tuple in training_progess_stataus table
+    dt = datetime.now()
+    var = (dt, dt, training_log_db_id)
+    training_log_db_id = db.update(AppSql.training_status_update_end,var)
+    db.close()
+
+def __log_artifact(local_path:str, artifact_path:str):
+    try:
+        mlflow.log_artifact(local_path= local_path, artifact_path=artifact_path)
+    except Exception as e:
+        print('error when log artifacts: ',e)
+
+def train(hyp, opt, device, callbacks, run):  # hyp is path/to/hyp.yaml or hyp dictionary
     save_dir, epochs, batch_size, weights, single_cls, evolve, data, cfg, resume, noval, nosave, workers, freeze = \
         Path(opt.save_dir), opt.epochs, opt.batch_size, opt.weights, opt.single_cls, opt.evolve, opt.data, opt.cfg, \
         opt.resume, opt.noval, opt.nosave, opt.workers, opt.freeze
@@ -94,6 +131,20 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
     if not evolve:
         yaml_save(save_dir / 'hyp.yaml', hyp)
         yaml_save(save_dir / 'opt.yaml', vars(opt))
+        shutil.move(Path(save_dir / 'hyp.yaml'), Path(save_dir / f'{opt.name}-hyp.yaml'))
+        shutil.move(Path(save_dir / 'opt.yaml'), Path(save_dir / f'{opt.name}-opt.yaml'))
+        __log_artifact(local_path= Path(save_dir / f'{opt.name}-hyp.yaml'), artifact_path='cfg_data')
+        __log_artifact(local_path= Path(save_dir / f'{opt.name}-opt.yaml'), artifact_path='cfg_data')
+
+        run_info = RunInfo(
+            exp_name=opt.project,
+            run_name=opt.name,
+            run_id=run.info.run_id,
+            yolo_model_type=opt.yolo_model_type,
+            run_date = datetime.fromtimestamp(int(run.info.start_time)/1000).strftime('%Y-%m-%d %X')
+        )
+        run_info.save_yaml(save_dir=Path(save_dir / "weights/model_info.yaml"))
+        __log_artifact(local_path= Path(save_dir / f'weights/model_info.yaml'), artifact_path='weights')
 
     # Loggers
     data_dict = None
@@ -249,6 +300,29 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
     model.class_weights = labels_to_class_weights(dataset.labels, nc).to(device) * nc  # attach class weights
     model.names = names
 
+    # mlflow : log artifacts
+    shutil.copy2(cfg, Path(save_dir / f"{opt.name}-cfg.yaml"))
+    shutil.copy2(data, Path(save_dir / f"{opt.name}-data.yaml"))
+    __log_artifact(local_path=Path(save_dir / f"{opt.name}-cfg.yaml"), artifact_path='cfg_data')
+    __log_artifact(local_path=Path(save_dir / f"{opt.name}-data.yaml"), artifact_path='cfg_data')
+
+    __log_artifact(local_path=Path(save_dir / 'labels.jpg'), artifact_path='plot_metrics')
+    __log_artifact(local_path=Path(save_dir / 'labels_correlogram.jpg'), artifact_path='plot_metrics')
+
+    
+    __log_artifact(local_path=Path(train_path), artifact_path='cfg_data')
+    __log_artifact(local_path=Path(data_dict['val']), artifact_path='cfg_data')
+    __log_artifact(local_path=Path(data_dict['test']), artifact_path='cfg_data')
+
+    # mlflow : log train parameters
+    mlflow.log_param('batch_size', batch_size)
+    mlflow.log_param('imgsz', imgsz)
+    mlflow.log_param('epochs', epochs)
+    mlflow.log_param('workers', workers)
+
+    # mlflow : log model hyper parmaeter
+    mlflow.log_params({f'hyper_{key}': hyp[key] for key in hyp})
+
     # Start training
     t0 = time.time()
     nb = len(train_loader)  # number of batches
@@ -266,6 +340,10 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
                 f'Using {train_loader.num_workers * WORLD_SIZE} dataloader workers\n'
                 f"Logging results to {colorstr('bold', save_dir)}\n"
                 f'Starting training for {epochs} epochs...')
+    
+    #MLFLOW-Step 5: log model input output data format
+    mlflow_signature = None
+    
     for epoch in range(start_epoch, epochs):  # epoch ------------------------------------------------------------------
         callbacks.run('on_train_epoch_start')
         model.train()
@@ -320,7 +398,15 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
                     loss *= WORLD_SIZE  # gradient averaged between devices in DDP mode
                 if opt.quad:
                     loss *= 4.
-
+            
+            #MLFLOW-Step 5: log model input output data format
+            # It produces the signature to MLFlow model if is not set yet.
+            if mlflow_signature is None:
+                mlflow_signature = infer_signature(
+                                imgs.cpu().numpy(),
+                                pred[0].detach().cpu().numpy()
+                            )
+                
             # Backward
             scaler.scale(loss).backward()
 
@@ -342,6 +428,15 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
                 pbar.set_description(('%11s' * 2 + '%11.4g' * 5) %
                                      (f'{epoch}/{epochs - 1}', mem, *mloss, targets.shape[0], imgs.shape[-1]))
                 callbacks.run('on_train_batch_end', model, ni, imgs, targets, paths, list(mloss))
+
+                if ni < 3 and plots:
+                    while(True):
+                        if not os.path.exists(Path(save_dir / f'train_batch{ni}.jpg')):
+                            time.sleep(1)
+                        else:
+                            __log_artifact(local_path = Path(save_dir / f'train_batch{ni}.jpg'), artifact_path = 'plot_images')
+                            break
+
                 if callbacks.stop_training:
                     return
             # end batch ------------------------------------------------------------------------------------------------
@@ -376,6 +471,22 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
             log_vals = list(mloss) + list(results) + lr
             callbacks.run('on_fit_epoch_end', log_vals, epoch, best_fitness, fi)
 
+            # mlflow : log metric
+            mlflow.log_metric('train/box_loss', torch.nan_to_num(log_vals[0].cpu()).item(), step=epoch)
+            mlflow.log_metric('train/obj_loss', torch.nan_to_num(log_vals[1].cpu()).item(), step=epoch)
+            mlflow.log_metric('train/cls_loss', torch.nan_to_num(log_vals[2].cpu()).item(), step=epoch)
+            mlflow.log_metric('metrics/precision', np.nan_to_num(log_vals[3]).item(), step=epoch)
+            mlflow.log_metric('metrics/recall', np.nan_to_num(log_vals[4]).item(), step=epoch)
+            mlflow.log_metric('metrics/mAP_0.5', np.nan_to_num(log_vals[5]).item(), step=epoch)
+            mlflow.log_metric('metrics/mAP_0.5-0.95', np.nan_to_num(log_vals[6]).item(), step=epoch)
+            mlflow.log_metric('val/box_loss', log_vals[7], step=epoch)
+            mlflow.log_metric('val/obj_loss', log_vals[8], step=epoch)
+            mlflow.log_metric('val/cls_loss', log_vals[9], step=epoch)
+            mlflow.log_metric('x/lr0', np.nan_to_num(log_vals[10]).item(), step=epoch)
+            mlflow.log_metric('x/lr1', np.nan_to_num(log_vals[11]).item(), step=epoch)
+            mlflow.log_metric('x/lr2', np.nan_to_num(log_vals[12]).item(), step=epoch)
+            __update_training_status_db(opt.db_host, opt.db_port, epoch+1, opt.training_log_db_id)
+
             # Save model
             if (not nosave) or (final_epoch and not evolve):  # if save
                 ckpt = {
@@ -391,10 +502,21 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
 
                 # Save last, best and delete
                 torch.save(ckpt, last)
+                __log_artifact(local_path=Path(last), artifact_path='weights')
                 if best_fitness == fi:
                     torch.save(ckpt, best)
+                    __log_artifact(local_path=Path(best), artifact_path='weights')
+
+                    # MLFLOW - Step 4: Store the best model in the MLmodel format. 
+                    mlflow.pytorch.log_model(
+                        ckpt['model'], 
+                        "model", 
+                        signature=mlflow_signature
+                    )
+                    
                 if opt.save_period > 0 and epoch % opt.save_period == 0:
                     torch.save(ckpt, w / f'epoch{epoch}.pt')
+                    __log_artifact(local_path=Path(w / f'epoch{epoch}.pt'), artifact_path=f'weights')
                 del ckpt
                 callbacks.run('on_model_save', last, epoch, final_epoch, best_fitness, fi)
 
@@ -434,6 +556,18 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
                         callbacks.run('on_fit_epoch_end', list(mloss) + list(results) + lr, epoch, best_fitness, fi)
 
         callbacks.run('on_train_end', last, best, epoch, results)
+
+        model_save_path = f'{save_dir}/weights/best.pt'
+        __log_artifact(local_path=Path(best), artifact_path='weights')
+        __log_artifact(local_path=Path(last), artifact_path=f'weights')
+        # shutil.copy2(best, model_save_path)
+        model_exporter = ModelExporter(model_save_path)
+        model_exporter.convert()
+        model_exporter.encrypt()
+        # __log_artifact(local_path=Path(model_save_path), artifact_path='weights')
+        __log_artifact(local_path=Path(model_exporter.wts_path), artifact_path='weights')
+        __log_artifact(local_path=Path(model_exporter.wts_enc_path), artifact_path='weights')
+        __update_training_end_status_db(opt.db_host, opt.db_port, opt.training_log_db_id)
 
     torch.cuda.empty_cache()
     return results
@@ -482,6 +616,13 @@ def parse_opt(known=False):
     parser.add_argument('--bbox_interval', type=int, default=-1, help='Set bounding-box image logging interval')
     parser.add_argument('--artifact_alias', type=str, default='latest', help='Version of dataset artifact to use')
 
+    # Custom arguments
+    parser.add_argument('--yolo_model_type', type=str, default='yolov5n', help='Version of dataset artifact to use')
+    parser.add_argument('--mlflow_tracking_uri', type=str, default=MLFLOW_TRACKING_URI, help='Version of dataset artifact to use')
+    parser.add_argument('--remove_resource_after_train', type=bool, default=True, help='remove train aftifacts after train')
+    parser.add_argument('--training_log_db_id', type=str, required=True, help='training_log_db_id')
+    parser.add_argument('--db_host', type=str, help='db_host')
+    parser.add_argument('--db_port', type=str, help='db_port')
     return parser.parse_known_args()[0] if known else parser.parse_args()
 
 
@@ -533,8 +674,17 @@ def main(opt, callbacks=Callbacks()):
 
     # Train
     if not opt.evolve:
-        train(opt.hyp, opt, device, callbacks)
+        mlflow.set_tracking_uri(opt.mlflow_tracking_uri)
+        mlflow.set_experiment(experiment_name=opt.project)
+        with mlflow.start_run(run_name=opt.name) as run:
+            mlflow.set_tags({'yolo_model_type': opt.yolo_model_type})
+            train(opt.hyp, opt, device, callbacks, run)
 
+        if opt.remove_resource_after_train:
+            print('Clean the training artifacts in local yolo directory')
+            shutil.rmtree(opt.save_dir, ignore_errors=True)
+        else:
+            print('keep the training artifacts in local')
     # Evolve hyperparameters (optional)
     else:
         # Hyperparameter evolution metadata (mutation scale 0-1, lower_limit, upper_limit)
