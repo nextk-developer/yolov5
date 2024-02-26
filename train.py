@@ -81,7 +81,7 @@ GIT_INFO = ""
 
 def __update_training_status_db(db_host, db_port, current_epoch, training_log_db_id):
     #insert log
-    db = Database(host=db_host, port=db_port)
+    db = Database()
     db.connect()
     
     # create tuple in training_progess_stataus table
@@ -94,7 +94,7 @@ def __update_training_status_db(db_host, db_port, current_epoch, training_log_db
 
 def __update_training_end_status_db(db_host, db_port, training_log_db_id):
     #insert log
-    db = Database(host=db_host, port=db_port)
+    db = Database()
     db.connect()
     
     # create tuple in training_progess_stataus table
@@ -485,7 +485,9 @@ def train(hyp, opt, device, callbacks, run):  # hyp is path/to/hyp.yaml or hyp d
             mlflow.log_metric('x/lr0', np.nan_to_num(log_vals[10]).item(), step=epoch)
             mlflow.log_metric('x/lr1', np.nan_to_num(log_vals[11]).item(), step=epoch)
             mlflow.log_metric('x/lr2', np.nan_to_num(log_vals[12]).item(), step=epoch)
+            print(opt.db_host, opt.db_port, epoch+1, opt.training_log_db_id)
             __update_training_status_db(opt.db_host, opt.db_port, epoch+1, opt.training_log_db_id)
+            
 
             # Save model
             if (not nosave) or (final_epoch and not evolve):  # if save

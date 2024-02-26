@@ -29,6 +29,25 @@ class Database:
     def __init__(self, host=os.getenv("DB_HOST"), port=os.getenv("DB_PORT"),\
         database=os.getenv("DB_NAME"),\
         user=os.getenv("DB_ID"), password=os.getenv("DB_PW")) -> None:  
+        # if database is None or user is None or password is None:
+        #     if os.environ.get("DB_NAME") is not None:
+        #         host = os.environ.get("DB_HOST")
+        #         port = os.environ.get("DB_PORT")
+        #         database = os.environ.get("DB_NAME")
+        #         user = os.environ.get("DB_ID")
+        #         password = os.environ.get("DB_PW")
+        #     else:
+        #         host="192.168.0.70"
+        #         port="5434"
+        #         database="mlops_database"
+        #         user="nextk"
+        #         password="nextk"
+        #     print(f'init database 2:{host} {port} {database} {user} {password}')     
+        host="192.168.0.70"
+        port="5434"
+        database="mlops_database"
+        user="nextk"
+        password="nextk"
         print(f'init database:{host} {port} {database} {user} {password}')     
         self.host = host
         self.port = port
