@@ -620,7 +620,8 @@ def parse_opt(known=False):
 
     # Custom arguments
     parser.add_argument('--yolo_model_type', type=str, default='yolov5n', help='Version of dataset artifact to use')
-    parser.add_argument('--mlflow_tracking_uri', type=str, default=MLFLOW_TRACKING_URI, help='Version of dataset artifact to use')
+    parser.add_argument('--mlflow_tracking_uri', type=str, default=MLFLOW_TRACKING_URI, help='Mlflow tracking uri')
+    parser.add_argument('--mlflow_run_id', type=str, help='mlflow run id')
     parser.add_argument('--remove_resource_after_train', type=bool, default=True, help='remove train aftifacts after train')
     parser.add_argument('--training_log_db_id', type=str, required=True, help='training_log_db_id')
     parser.add_argument('--db_host', type=str, help='db_host')
@@ -677,9 +678,8 @@ def main(opt, callbacks=Callbacks()):
     # Train
     if not opt.evolve:
         mlflow.set_tracking_uri(opt.mlflow_tracking_uri)
-        mlflow.set_experiment(experiment_name=opt.project)
-        with mlflow.start_run(run_name=opt.name) as run:
-            mlflow.set_tags({'yolo_model_type': opt.yolo_model_type})
+        # mlflow.set_experiment(experiment_name=opt.project)
+        with mlflow.start_run(run_id=opt.mlflow_run_id) as run:
             train(opt.hyp, opt, device, callbacks, run)
 
         if opt.remove_resource_after_train:
