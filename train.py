@@ -367,6 +367,9 @@ def train(hyp, opt, device, callbacks):
     mlflow.log_param('epochs', epochs)
     mlflow.log_param('workers', workers)   
 
+    # mlflow: log empty modle
+    mlflow.pytorch.log_model(torch.nn.Module(), "model")
+
     # Start training
     t0 = time.time()
     nb = len(train_loader)  # number of batches
@@ -523,7 +526,7 @@ def train(hyp, opt, device, callbacks):
             mlflow.log_metric('x/lr0', np.nan_to_num(log_vals[10]).item(), step=epoch)
             mlflow.log_metric('x/lr1', np.nan_to_num(log_vals[11]).item(), step=epoch)
             mlflow.log_metric('x/lr2', np.nan_to_num(log_vals[12]).item(), step=epoch)
-            
+
             # Save model
             if (not nosave) or (final_epoch and not evolve):  # if save
                 ckpt = {
