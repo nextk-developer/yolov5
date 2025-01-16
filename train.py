@@ -509,6 +509,21 @@ def train(hyp, opt, device, callbacks):
             log_vals = list(mloss) + list(results) + lr
             callbacks.run("on_fit_epoch_end", log_vals, epoch, best_fitness, fi)
 
+            # mlflow : log metric
+            mlflow.log_metric('train/box_loss', torch.nan_to_num(log_vals[0].cpu()).item(), step=epoch)
+            mlflow.log_metric('train/obj_loss', torch.nan_to_num(log_vals[1].cpu()).item(), step=epoch)
+            mlflow.log_metric('train/cls_loss', torch.nan_to_num(log_vals[2].cpu()).item(), step=epoch)
+            mlflow.log_metric('metrics/precision', np.nan_to_num(log_vals[3]).item(), step=epoch)
+            mlflow.log_metric('metrics/recall', np.nan_to_num(log_vals[4]).item(), step=epoch)
+            mlflow.log_metric('metrics/mAP_0.5', np.nan_to_num(log_vals[5]).item(), step=epoch)
+            mlflow.log_metric('metrics/mAP_0.5-0.95', np.nan_to_num(log_vals[6]).item(), step=epoch)
+            mlflow.log_metric('val/box_loss', log_vals[7], step=epoch)
+            mlflow.log_metric('val/obj_loss', log_vals[8], step=epoch)
+            mlflow.log_metric('val/cls_loss', log_vals[9], step=epoch)
+            mlflow.log_metric('x/lr0', np.nan_to_num(log_vals[10]).item(), step=epoch)
+            mlflow.log_metric('x/lr1', np.nan_to_num(log_vals[11]).item(), step=epoch)
+            mlflow.log_metric('x/lr2', np.nan_to_num(log_vals[12]).item(), step=epoch)
+            
             # Save model
             if (not nosave) or (final_epoch and not evolve):  # if save
                 ckpt = {
