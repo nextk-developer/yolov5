@@ -38,8 +38,6 @@ import yaml
 from torch.optim import lr_scheduler
 from tqdm import tqdm
 
-from utils.custom_utils import convert_model, encrypt_model
-
 FILE = Path(__file__).resolve()
 ROOT = FILE.parents[0]  # YOLOv5 root directory
 if str(ROOT) not in sys.path:
@@ -95,6 +93,11 @@ from utils.torch_utils import (
     smart_resume,
     torch_distributed_zero_first,
 )
+
+import mlflow
+import shutil
+from utils.custom_utils import convert_model, encrypt_model, init_mlflow, log_artifact
+
 
 LOCAL_RANK = int(os.getenv("LOCAL_RANK", -1))  # https://pytorch.org/docs/stable/elastic/run.html
 RANK = int(os.getenv("RANK", -1))
@@ -169,6 +172,8 @@ def train(hyp, opt, device, callbacks):
     if not evolve:
         yaml_save(save_dir / "hyp.yaml", hyp)
         yaml_save(save_dir / "opt.yaml", vars(opt))
+        log_artifact(local_path=Path(save_dir / "hyp.yaml"), artifact_path="cfg_data")
+        log_artifact(local_path=Path(save_dir / "opt.yaml"), artifact_path="cfg_data")
 
     # Loggers
     data_dict = None
@@ -345,6 +350,17 @@ def train(hyp, opt, device, callbacks):
     model.class_weights = labels_to_class_weights(dataset.labels, nc).to(device) * nc  # attach class weights
     model.names = names
 
+    # mlflow: log artifacts
+    log_artifact(local_path=cfg, artifact_path="cfg_data")
+    log_artifact(local_path=data, artifact_path="cfg_data")
+
+    log_artifact(local_path=Path(save_dir / 'labels.jpg'), artifact_path="plot_metrics")
+    log_artifact(local_path=Path(save_dir / 'labels_correlogram.jpg'), artifact_path="plot_metrics")
+
+    log_artifact(local_path=Path(train_path), artifact_path="cfg_data")
+    log_artifact(local_path=Path(data_dict['val']), artifact_path="cfg_data")
+    log_artifact(local_path=Path(data_dict['test']), artifact_path="cfg_data")
+
     # Start training
     t0 = time.time()
     nb = len(train_loader)  # number of batches
@@ -442,6 +458,15 @@ def train(hyp, opt, device, callbacks):
                     % (f"{epoch}/{epochs - 1}", mem, *mloss, targets.shape[0], imgs.shape[-1])
                 )
                 callbacks.run("on_train_batch_end", model, ni, imgs, targets, paths, list(mloss))
+                
+                if ni < 3 and plots:
+                    while(True):
+                        if not os.path.exists(Path(save_dir / f'train_batch{ni}.jpg')):
+                            time.sleep(1)
+                        else:
+                            log_artifact(local_path = Path(save_dir / f'train_batch{ni}.jpg'), artifact_path = 'plot_images')
+                            break
+
                 if callbacks.stop_training:
                     return
             # end batch ------------------------------------------------------------------------------------------------
@@ -494,10 +519,13 @@ def train(hyp, opt, device, callbacks):
 
                 # Save last, best and delete
                 torch.save(ckpt, last)
+                log_artifact(local_path=Path(last), artifact_path='weights')
                 if best_fitness == fi:
                     torch.save(ckpt, best)
+                    log_artifact(local_path=Path(best), artifact_path='weights')
                 if opt.save_period > 0 and epoch % opt.save_period == 0:
                     torch.save(ckpt, w / f"epoch{epoch}.pt")
+                    log_artifact(local_path=Path(w / f'epoch{epoch}.pt'), artifact_path=f'weights')
                 del ckpt
                 callbacks.run("on_model_save", last, epoch, final_epoch, best_fitness, fi)
 
@@ -542,8 +570,17 @@ def train(hyp, opt, device, callbacks):
         convert_model(model_path)
         encrypt_model(model_path)
 
+        log_artifact(local_path=Path(best), artifact_path="weights")
+        log_artifact(local_path=Path(last), artifact_path="weights")
+        log_artifact(local_path=Path(f'{save_dir}/weights/best.wts'), artifact_path="weights")
+        log_artifact(local_path=Path(f'{save_dir}/weights/best_enc.wts'), artifact_path="weights")
+
 
     torch.cuda.empty_cache()
+    
+    if os.path.exists(Path(save_dir)):
+        shutil.rmtree(Path(save_dir))
+
     return results
 
 
@@ -643,6 +680,8 @@ def main(opt, callbacks=Callbacks()):
         check_git_status()
         check_requirements(ROOT / "requirements.txt")
 
+    init_mlflow(opt.project, opt.name)
+
     # Resume (from specified or most recent last.pt)
     if opt.resume and not check_comet_resume(opt) and not opt.evolve:
         last = Path(check_file(opt.resume) if isinstance(opt.resume, str) else get_latest_run())
@@ -691,7 +730,8 @@ def main(opt, callbacks=Callbacks()):
 
     # Train
     if not opt.evolve:
-        train(opt.hyp, opt, device, callbacks)
+        with mlflow.start_run(run_name=opt.name) as run:
+            train(opt.hyp, opt, device, callbacks)
 
     # Evolve hyperparameters (optional)
     else:

@@ -1,9 +1,12 @@
 import os
 import torch
 import struct
+import mlflow
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import pad, unpad
+from dotenv import dotenv_values
 
+CONFIG = dotenv_values(dotenv_path=os.path.join(os.path.dirname(os.path.abspath(__file__)), "../.env"))
 
 def convert_model(pt_path):
     wts_path = os.path.splitext(pt_path)[0] + ".wts"
@@ -49,4 +52,25 @@ def encrypt_model(pt_path):
     with open(enc_file_path, "wb") as f:
         f.write(encrypted_text)
 
+    return
+
+def init_mlflow(project_name, run_name):
+    os.environ["MLFLOW_TRACKING_URI"] = f"http://{CONFIG['MLOPS_SERVER_IP']}:{CONFIG['MLFLOW_WEB_PORT']}"
+    os.environ["MLFLOW_ENABLE_SYSTEM_METRICS_LOGGING"] = "true"
+
+    os.environ["MLFLOW_EXPERIMENT_NAME"] = project_name
+    os.environ["MLFLOW_RUN"] = run_name
+    
+    os.environ["MLFLOW_TRACKING_USERNAME"] = "admin"
+    os.environ["MLFLOW_TRACKING_PASSWORD"] = "password"
+
+    os.environ["AWS_ACCESS_KEY_ID"] = CONFIG["MLFLOW_STORAGE_USER"]
+    os.environ["AWS_SECRET_ACCESS_KEY"] = CONFIG["MLFLOW_STORAGE_PASSWORD"]
+    os.environ["MLFLOW_S3_ENDPOINT_URL"] = f"http://{CONFIG['MLOPS_SERVER_IP']}:{CONFIG['MLFLOW_STORAGE_API_PORT']}"
+    print("successfully initialized mlflow")
+    return
+
+
+def log_artifact(local_path: str, artifact_path: str):
+    mlflow.log_artifact(local_path=local_path, artifact_path=artifact_path)
     return

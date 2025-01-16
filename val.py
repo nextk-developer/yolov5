@@ -60,6 +60,8 @@ from utils.metrics import ConfusionMatrix, ap_per_class, box_iou
 from utils.plots import output_to_target, plot_images, plot_val_study
 from utils.torch_utils import select_device, smart_inference_mode
 
+import time
+import mlflow
 
 def save_one_txt(predn, save_conf, shape, file):
     """
@@ -395,6 +397,13 @@ def run(
         if plots and batch_i < 3:
             plot_images(im, targets, paths, save_dir / f"val_batch{batch_i}_labels.jpg", names)  # labels
             plot_images(im, output_to_target(preds), paths, save_dir / f"val_batch{batch_i}_pred.jpg", names)  # pred
+            while(True):
+                if not os.path.exists(Path(save_dir / f'val_batch{batch_i}_labels.jpg')) or not os.path.exists(Path(save_dir / f'val_batch{batch_i}_pred.jpg')):
+                    time.sleep(1)
+                else:
+                    mlflow.log_artifact(local_path = save_dir / f'val_batch{batch_i}_labels.jpg', artifact_path = f'plot_images')
+                    mlflow.log_artifact(local_path = save_dir / f'val_batch{batch_i}_pred.jpg', artifact_path = f'plot_images')
+                    break
 
         callbacks.run("on_val_batch_end", batch_i, im, targets, paths, shapes, preds)
 
