@@ -361,6 +361,12 @@ def train(hyp, opt, device, callbacks):
     log_artifact(local_path=Path(data_dict['val']), artifact_path="cfg_data")
     log_artifact(local_path=Path(data_dict['test']), artifact_path="cfg_data")
 
+    # mlflow: log train parameters
+    mlflow.log_param('batch_size', batch_size)
+    mlflow.log_param('img_size', imgsz)
+    mlflow.log_param('epochs', epochs)
+    mlflow.log_param('workers', workers)   
+
     # Start training
     t0 = time.time()
     nb = len(train_loader)  # number of batches
