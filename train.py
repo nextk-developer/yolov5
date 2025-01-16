@@ -38,6 +38,8 @@ import yaml
 from torch.optim import lr_scheduler
 from tqdm import tqdm
 
+from utils.custom_utils import convert_model, encrypt_model
+
 FILE = Path(__file__).resolve()
 ROOT = FILE.parents[0]  # YOLOv5 root directory
 if str(ROOT) not in sys.path:
@@ -536,6 +538,10 @@ def train(hyp, opt, device, callbacks):
                         callbacks.run("on_fit_epoch_end", list(mloss) + list(results) + lr, epoch, best_fitness, fi)
 
         callbacks.run("on_train_end", last, best, epoch, results)
+        model_path = f'{save_dir}/weights/best.pt'
+        convert_model(model_path)
+        encrypt_model(model_path)
+
 
     torch.cuda.empty_cache()
     return results
