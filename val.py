@@ -62,6 +62,7 @@ from utils.torch_utils import select_device, smart_inference_mode
 
 import time
 import mlflow
+from utils.custom_utils import CONFIG
 
 def save_one_txt(predn, save_conf, shape, file):
     """
@@ -265,7 +266,7 @@ def run(
         device = select_device(device, batch_size=batch_size)
 
         # Directories
-        save_dir = increment_path(Path(project) / name, exist_ok=exist_ok)  # increment run
+        save_dir = Path(os.path.join(CONFIG['AIRFLOW_YOLOV5_CONFIG_DIR'], name))
         (save_dir / "labels" if save_txt else save_dir).mkdir(parents=True, exist_ok=True)  # make dir
 
         # Load model
@@ -417,6 +418,9 @@ def run(
 
     # Print results
     pf = "%22s" + "%11i" * 2 + "%11.3g" * 4  # print format
+
+    val_rst = {}
+    val_rst.update({"all": {"images": seen, "instances": nt.sum(), "mP": mp, "mR": mr, "mAP@0.5": map50, "mAP": map}})
     LOGGER.info(pf % ("all", seen, nt.sum(), mp, mr, map50, map))
     if nt.sum() == 0:
         LOGGER.warning(f"WARNING ⚠️ no labels found in {task} set, can not compute metrics without labels")
@@ -424,7 +428,12 @@ def run(
     # Print results per class
     if (verbose or (nc < 50 and not training)) and nc > 1 and len(stats):
         for i, c in enumerate(ap_class):
+            val_rst.update({"names[c]": {"images": seen, "instances": nt[c], "mP": p[i], "mR": r[i], "mAP@0.5": ap50[i], "mAP": ap[i]}})
             LOGGER.info(pf % (names[c], seen, nt[c], p[i], r[i], ap50[i], ap[i]))
+
+    if not training:
+        with open(save_dir / f"validation_result.json", "w") as f:
+            json.dump(val_rst, f)
 
     # Print speeds
     t = tuple(x.t / seen * 1e3 for x in dt)  # speeds per image
