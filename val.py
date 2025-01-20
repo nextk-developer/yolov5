@@ -420,7 +420,7 @@ def run(
     pf = "%22s" + "%11i" * 2 + "%11.3g" * 4  # print format
 
     val_rst = {}
-    val_rst.update({"all": {"images": seen, "instances": nt.sum(), "mP": mp, "mR": mr, "mAP@0.5": map50, "mAP": map}})
+    val_rst.update({"all": {"images": seen, "instances": int(nt.sum()), "mP": float(mp), "mR": float(mr), "mAP@0.5": float(map50), "mAP": float(map)}})
     LOGGER.info(pf % ("all", seen, nt.sum(), mp, mr, map50, map))
     if nt.sum() == 0:
         LOGGER.warning(f"WARNING ⚠️ no labels found in {task} set, can not compute metrics without labels")
@@ -428,7 +428,7 @@ def run(
     # Print results per class
     if (verbose or (nc < 50 and not training)) and nc > 1 and len(stats):
         for i, c in enumerate(ap_class):
-            val_rst.update({"names[c]": {"images": seen, "instances": nt[c], "mP": p[i], "mR": r[i], "mAP@0.5": ap50[i], "mAP": ap[i]}})
+            val_rst.update({str(names[c]): {"images": seen, "instances": int(nt[c]), "mP": float(p[i]), "mR": float(r[i]), "mAP@0.5": float(ap50[i]), "mAP": float(ap[i])}})
             LOGGER.info(pf % (names[c], seen, nt[c], p[i], r[i], ap50[i], ap[i]))
 
     if not training:
