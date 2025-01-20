@@ -2,6 +2,7 @@ import os
 import torch
 import struct
 import mlflow
+import psycopg2
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import pad, unpad
 from dotenv import dotenv_values
@@ -74,3 +75,35 @@ def init_mlflow(project_name, run_name):
 def log_artifact(local_path: str, artifact_path: str):
     mlflow.log_artifact(local_path=local_path, artifact_path=artifact_path)
     return
+
+
+class Database:
+    def __init__(self):
+        self.db = psycopg2.connect(
+            host=CONFIG["MLOPS_SERVER_IP"],
+            port=CONFIG["POSTGRESQL_DB_PORT"],
+            dbname=CONFIG["POSTGRESQL_DB_NAME"],
+            user=CONFIG["POSTGRESQL_DB_USER"],
+            password=CONFIG["POSTGRESQL_DB_PASSWORD"],
+        )
+        self.cursor = self.db.cursor()
+        return
+
+    def __del__(self):
+        self.db.close()
+        self.cursor.close()
+        return
+
+    def execute(self, query):
+        self.cursor.execute(query)
+        return
+
+    def fetchall(self):
+        return self.cursor.fetchall()
+
+    def fetchone(self):
+        return self.cursor.fetchone()
+
+    def commit(self):
+        self.db.commit()
+        return

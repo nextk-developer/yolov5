@@ -96,13 +96,24 @@ from utils.torch_utils import (
 
 import mlflow
 import shutil
-from utils.custom_utils import convert_model, encrypt_model, init_mlflow, log_artifact
+from utils.custom_utils import convert_model, encrypt_model, init_mlflow, log_artifact, Database
 
 
 LOCAL_RANK = int(os.getenv("LOCAL_RANK", -1))  # https://pytorch.org/docs/stable/elastic/run.html
 RANK = int(os.getenv("RANK", -1))
 WORLD_SIZE = int(os.getenv("WORLD_SIZE", 1))
 GIT_INFO = check_git_info()
+
+def update_current_epoch_to_db(training_id, current_epoch):
+    db = Database()
+    try:
+        db.execute(f"UPDATE trainings SET current_epoch={current_epoch} WHERE training_id={training_id}")
+        db.commit()
+    except Exception as e:
+        LOGGER.error(f"Error updating current epoch to db: {e}")
+
+    return
+
 
 
 def train(hyp, opt, device, callbacks):
@@ -526,6 +537,7 @@ def train(hyp, opt, device, callbacks):
             mlflow.log_metric('x/lr0', np.nan_to_num(log_vals[10]).item(), step=epoch)
             mlflow.log_metric('x/lr1', np.nan_to_num(log_vals[11]).item(), step=epoch)
             mlflow.log_metric('x/lr2', np.nan_to_num(log_vals[12]).item(), step=epoch)
+            update_current_epoch_to_db(opt.training_id, epoch+1)
 
             # Save model
             if (not nosave) or (final_epoch and not evolve):  # if save
@@ -679,6 +691,9 @@ def parse_opt(known=False):
     # NDJSON logging
     parser.add_argument("--ndjson-console", action="store_true", help="Log ndjson to console")
     parser.add_argument("--ndjson-file", action="store_true", help="Log ndjson to file")
+
+    # Custom Arguments
+    parser.add_argument("--training_id", type=str, required=True, help="Training ID")
 
     return parser.parse_known_args()[0] if known else parser.parse_args()
 
