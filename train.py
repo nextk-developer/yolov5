@@ -96,7 +96,7 @@ from utils.torch_utils import (
 
 import mlflow
 import shutil
-from utils.custom_utils import convert_model, encrypt_model, init_mlflow, log_artifact, Database
+from utils.custom_utils import convert_model, encrypt_model, init_mlflow, log_artifact, Database, CONFIG
 
 
 LOCAL_RANK = int(os.getenv("LOCAL_RANK", -1))  # https://pytorch.org/docs/stable/elastic/run.html
@@ -750,7 +750,7 @@ def main(opt, callbacks=Callbacks()):
             opt.exist_ok, opt.resume = opt.resume, False  # pass resume to exist_ok and disable resume
         if opt.name == "cfg":
             opt.name = Path(opt.cfg).stem  # use model.yaml as name
-        opt.save_dir = str(increment_path(Path(opt.project) / opt.name, exist_ok=opt.exist_ok))
+        opt.save_dir = os.path.join(CONFIG['AIRFLOW_YOLOV5_CONFIG_DIR'], opt.training_id)
 
     # DDP mode
     device = select_device(opt.device, batch_size=opt.batch_size)
