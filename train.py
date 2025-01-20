@@ -58,8 +58,8 @@ from utils.general import (
     check_amp,
     check_dataset,
     check_file,
-    check_git_info,
-    check_git_status,
+    # check_git_info,
+    # check_git_status,
     check_img_size,
     check_requirements,
     check_suffix,
@@ -102,7 +102,7 @@ from utils.custom_utils import convert_model, encrypt_model, init_mlflow, log_ar
 LOCAL_RANK = int(os.getenv("LOCAL_RANK", -1))  # https://pytorch.org/docs/stable/elastic/run.html
 RANK = int(os.getenv("RANK", -1))
 WORLD_SIZE = int(os.getenv("WORLD_SIZE", 1))
-GIT_INFO = check_git_info()
+# GIT_INFO = check_git_info()
 
 def update_current_epoch_to_db(training_id, current_epoch):
     db = Database()
@@ -549,7 +549,7 @@ def train(hyp, opt, device, callbacks):
                     "updates": ema.updates,
                     "optimizer": optimizer.state_dict(),
                     "opt": vars(opt),
-                    "git": GIT_INFO,  # {remote, branch, commit} if a git repo
+                    # "git": GIT_INFO,  # {remote, branch, commit} if a git repo
                     "date": datetime.now().isoformat(),
                 }
 
@@ -716,7 +716,7 @@ def main(opt, callbacks=Callbacks()):
     """
     if RANK in {-1, 0}:
         print_args(vars(opt))
-        check_git_status()
+        # check_git_status()
         check_requirements(ROOT / "requirements.txt")
 
     init_mlflow(opt.project, opt.name)
