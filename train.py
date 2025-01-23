@@ -114,6 +114,21 @@ def update_current_epoch_to_db(training_id, current_epoch):
 
     return
 
+def update_model_id_to_db(opt):
+    db = Database()
+    try:
+        db.execute(f"INSERT INTO models (model_id,project_name,model_type) VALUES ('{opt.model_id}', '{opt.project}', '{os.path.basename(os.path.splitext(opt.cfg)[0])}')")
+        db.commit()
+    except Exception as e:
+        LOGGER.error(f"Error inserting model id to db: {e}")
+
+    try:
+        db.execute(f"UPDATE trainings SET model_id='{opt.model_id}' WHERE training_id='{opt.training_id}'")
+        db.commit()
+    except Exception as e:
+        LOGGER.error(f"Error updating model id to db: {e}")
+
+    return
 
 
 def train(hyp, opt, device, callbacks):
@@ -377,6 +392,7 @@ def train(hyp, opt, device, callbacks):
     mlflow.log_param('img_size', imgsz)
     mlflow.log_param('epochs', epochs)
     mlflow.log_param('workers', workers)   
+    update_model_id_to_db(opt)
 
     # mlflow: log empty modle
     mlflow.pytorch.log_model(torch.nn.Module(), "model")
@@ -770,6 +786,7 @@ def main(opt, callbacks=Callbacks()):
     # Train
     if not opt.evolve:
         with mlflow.start_run(run_name=opt.name) as run:
+            opt.model_id = run.info.run_id
             train(opt.hyp, opt, device, callbacks)
 
     # Evolve hyperparameters (optional)
