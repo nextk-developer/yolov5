@@ -107,7 +107,7 @@ WORLD_SIZE = int(os.getenv("WORLD_SIZE", 1))
 def update_current_epoch_to_db(training_id, current_epoch):
     db = Database()
     try:
-        db.execute(f"UPDATE trainings SET current_epoch={current_epoch} WHERE training_id={training_id}")
+        db.execute(f"UPDATE trainings SET current_epochs={current_epoch} WHERE training_id='{training_id}'")
         db.commit()
     except Exception as e:
         LOGGER.error(f"Error updating current epoch to db: {e}")
