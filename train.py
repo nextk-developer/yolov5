@@ -111,7 +111,7 @@ def update_current_epoch_to_db(training_id, current_epoch):
         db.commit()
     except Exception as e:
         LOGGER.error(f"Error updating current epoch to db: {e}")
-
+    del db
     return
 
 def update_model_id_to_db(opt):
@@ -127,7 +127,7 @@ def update_model_id_to_db(opt):
         db.commit()
     except Exception as e:
         LOGGER.error(f"Error updating model id to db: {e}")
-
+    del db
     return
 
 
@@ -766,7 +766,7 @@ def main(opt, callbacks=Callbacks()):
             opt.exist_ok, opt.resume = opt.resume, False  # pass resume to exist_ok and disable resume
         if opt.name == "cfg":
             opt.name = Path(opt.cfg).stem  # use model.yaml as name
-        opt.save_dir = os.path.join(CONFIG['AIRFLOW_YOLOV5_CONFIG_DIR'], opt.training_id)
+        opt.save_dir = os.path.join(CONFIG['AIRFLOW_YOLOV5_CONFIG_DIR'], "training", opt.training_id)
 
     # DDP mode
     device = select_device(opt.device, batch_size=opt.batch_size)

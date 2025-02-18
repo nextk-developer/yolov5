@@ -266,7 +266,7 @@ def run(
         device = select_device(device, batch_size=batch_size)
 
         # Directories
-        save_dir = Path(os.path.join(CONFIG['AIRFLOW_YOLOV5_CONFIG_DIR'], name))
+        save_dir = Path(os.path.join(CONFIG['AIRFLOW_YOLOV5_CONFIG_DIR'], "evaluation", name))
         (save_dir / "labels" if save_txt else save_dir).mkdir(parents=True, exist_ok=True)  # make dir
 
         # Load model
